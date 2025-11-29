@@ -3,6 +3,10 @@ import argparse, time, torch
 from PIL import Image
 from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights
 from torchvision import transforms
+import timm
+from timm.data import resolve_data_config
+from timm.data.transforms_factory import create_transform
+import urllib
 
 def parse_args():
     p = argparse.ArgumentParser(description="CPU test for MobileNetV3-Small (ImageNet-1k).")
@@ -13,12 +17,9 @@ def parse_args():
     p.add_argument("--img-size", type=int, default=224, help="Resize/crop target.")
     return p.parse_args()
 
-@torch.no_grad()
-def main():
-    args = parse_args()
+def mobilenet_V3_small_predict(args):
     torch.set_num_threads(args.num_threads)
-
-    # Load pretrained weights and model (downloads once, then cached)
+        # Load pretrained weights and model (downloads once, then cached)
     weights = MobileNet_V3_Small_Weights.IMAGENET1K_V1
     model = mobilenet_v3_small(weights=weights).eval()  # CPU by default
 
@@ -61,6 +62,48 @@ def main():
     print("\nTop-5:")
     for i, (cls_id, p) in enumerate(zip(ids, vals), 1):
         print(f"{i}. {labels[cls_id]} — {p*100:.2f}%")
+
+def mobilenet_v3_large_predict(args):
+    model = timm.create_model('mobilenetv3_large_100', pretrained=True)
+    model.eval()
+
+    config = resolve_data_config({}, model=model)
+    transform = create_transform(**config)
+
+    if args.image:
+        img = Image.open(args.image).convert('RGB')
+        tensor = transform(img).unsqueeze(0) # transform and add batch dimension
+    
+    start = time.perf_counter()
+    for _ in range(args.runs):
+        with torch.inference_mode():
+            out = model(tensor)
+    elapsed = time.perf_counter() - start
+    avg_ms = (elapsed / args.runs) * 1000.0
+    
+
+    url, filename = ("https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt", "imagenet_classes.txt")
+    urllib.request.urlretrieve(url, filename) 
+    with torch.inference_mode():
+        out = model(tensor)
+    probabilities = torch.nn.functional.softmax(out[0], dim=0)
+    with open("imagenet_classes.txt", "r") as f:
+        categories = [s.strip() for s in f.readlines()]
+    
+    top5_prob, top5_catid = torch.topk(probabilities, 5)
+
+    print("\n=== MobileNetV3-Large (CPU) ===")
+    print(f"Threads: {args.num_threads} | Image size: {args.img_size} | Runs: {args.runs} | Warmup: {args.warmup}")
+    print(f"Average latency (batch=1): {avg_ms:.2f} ms")
+    print("\nTop-5:")
+    for i in range(top5_prob.size(0)):
+        print(f"{i}. {categories[top5_catid[i]]} — {top5_prob[i].item()*100:.2f}%")
+
+@torch.no_grad()
+def main():
+    args = parse_args()
+    mobilenet_V3_small_predict(args)
+    mobilenet_v3_large_predict(args)
 
 if __name__ == "__main__":
     main()
