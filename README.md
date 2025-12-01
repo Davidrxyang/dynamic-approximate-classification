@@ -1,5 +1,22 @@
 # dynamic-approximate-classification
-dynamic vision object classification framework using approximate computing concepts. 
+
+dynamic vision object classification framework using approximate computing concepts. This framework is designed for self-driving vehicle decision-making processes. 
+
+## overview
+
+The DAC framework consists of three main components:
+
+### 1. Vision Model Selector
+
+When an object appears in front of the agent, a distance reading is taken immediately. This distance reading is fed into a simple threshold model. Based on how close the object is, the threshold model determines how urgently a decision must be made for the self-driving vehicle in regards to the object. The model accordingly selects a computer vision network of appropriate size, speed, and output granularity based on how fast a decision is required considering the urgency of the situation. 
+
+### 2. Computer Vision Model Set
+
+The selected vision model takes as input a visual snapshot of the scene and outputs a set of labels for objects in the scene as well as a confidence distribution over the predicted labels. Intuitively, smaller and faster models will output lower confidence values for particular labels. 
+
+### 3. Decision Model
+
+The label set and confidence distribution is passed into a decision model. Based on the nature of the recognized objects, the confidence of the vision model, and the urgency of the scenario, the decision model outputs an action for the self-driving vehicle considering all the listed factors. For example, the vehicle may continue in its current course if the system recognizes a paper bag regardless of the confidence; on the other hand, the vehicle should brake if the system recognizes a human in front of the vehicle, with the degree of braking determined by the urgency of the situation (distance). 
 
 ## training data
 
@@ -21,11 +38,7 @@ you may have to install a bunch of things in the venv
 ## execution 
 
 ```
-python mobilenetv3_test.py --image PATH --num-threads 8
+python3 DAC.py
 ```
 
-switch out PATH for path to image data, for example:
-
-```
-python mobilenetv3_test.py --image data/car.jpg --num-threads 8
-```
+configure parameters in the parameters.py file
