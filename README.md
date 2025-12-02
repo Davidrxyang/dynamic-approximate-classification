@@ -24,6 +24,41 @@ training data is split into train and val datasets. each dataset includes a meta
 
 class_id labels: 'car': 1, 'truck': 2, 'pedestrian': 3, 'bicyclist': 4, 'light': 5
 
+## finetuning
+
+to finetune mobilenetv3_small:
+python3 finetune_mobilenet.py \
+  --model small \
+  --train-images-root train \
+  --val-images-root val \
+  --train-csv train/train_labels.csv \
+  --val-csv val/val_labels.csv \
+  --batch-size 64 \
+  --epochs 5 \
+  --lr 1e-4 \
+  --output-dir ckpts_small \
+  --device cpu
+
+to finetune mobilenetv3_large:
+python3 finetune_mobilenet.py \
+  --model large \
+  --train-images-root train \
+  --val-images-root val \
+  --train-csv train/train_labels.csv \
+  --val-csv val/val_labels.csv \
+  --batch-size 64 \
+  --epochs 5 \
+  --lr 1e-4 \
+  --output-dir ckpts_large \
+  --device cpu
+
+to run inference:
+python3 infer_mobilenet.py \
+  --checkpoint ckpts_small/best_mobilenet_small_finetuned.pth \
+  --image train/1478019954186238236.jpg \
+  --device cpu
+
+
 ## setup
 
 make sure you are using a python venv
