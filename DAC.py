@@ -6,15 +6,15 @@ Dynamic approximate classification demo script (batched version).
 - For each image:
     * Look up its distance label from metadata.json.
     * Use a simple threshold rule on distance to choose between:
-        - MobileNetV3-Small (fast)
-        - MobileNetV3-Large (bigger, more accurate)
+        - MobileNetV3-Small (fast, fine-tuned)
+        - MobileNetV3-Large (bigger, more accurate, fine-tuned)
     * Run the chosen model and print the label distribution and confidences.
 
 Key points:
 - We only load each model ONCE (no re-training / re-loading per image).
 - Larger distance means the object is CLOSER (more urgent).
   => For distance >= threshold, we use the SMALL (fast) model.
-- All configuration is in parameters.py.
+- All configuration is in parameters.py, including checkpoint paths.
 """
 
 import json
@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 
 import torch
+import torch.nn as nn
 from PIL import Image
 
 from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights
@@ -32,8 +33,6 @@ from torchvision import transforms  # noqa: F401 (import kept for clarity)
 import timm
 from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
-
-import urllib.request
 
 import parameters as cfg  # <-- all config flags live here
 
@@ -69,39 +68,66 @@ def get_valid_image_paths(image_dir: str, metadata: dict) -> list[Path]:
 
 
 # -----------------------------
-# Model loading & preprocessing
+# Model loading & preprocessing (fine-tuned)
 # -----------------------------
 
-def load_mobilenet_v3_small(img_size: int):
+def load_mobilenet_v3_small(img_size: int, ckpt_path: str):
     """
-    Load MobileNetV3-Small with ImageNet weights and its transforms.
+    Load fine-tuned MobileNetV3-Small and its transforms.
+
+    - Architecture: torchvision mobilenet_v3_small
+    - Head: replaced with NUM_CLASSES output
+    - Weights: loaded from fine-tuned checkpoint
     """
+    # We still reuse ImageNet transforms (same as used in finetuning script)
     weights = MobileNet_V3_Small_Weights.IMAGENET1K_V1
-    model = mobilenet_v3_small(weights=weights).eval()  # CPU by default
     transform = weights.transforms(crop_size=img_size)
-    categories = weights.meta.get("categories")
+
+    # Build model skeleton (no pretrained weights; checkpoint will provide them)
+    model = mobilenet_v3_small(weights=None)
+    in_features = model.classifier[-1].in_features
+    model.classifier[-1] = nn.Linear(in_features, cfg.NUM_CLASSES)
+
+    # Load checkpoint
+    ckpt = torch.load(ckpt_path, map_location="cpu")
+    state_dict = ckpt["model_state"]
+    model.load_state_dict(state_dict)
+    model.eval()
+
+    # Use id2name from checkpoint to build label list in index order
+    id2name = ckpt.get("id2name", {i + 1: str(i + 1) for i in range(cfg.NUM_CLASSES)})
+    # categories[idx] will be the display label for class index idx
+    categories = [id2name[i] for i in sorted(id2name.keys())]
+
     return model, transform, categories
 
 
-def load_mobilenet_v3_large():
+def load_mobilenet_v3_large(ckpt_path: str):
     """
-    Load MobileNetV3-Large (from timm) with ImageNet weights and its transforms.
+    Load fine-tuned MobileNetV3-Large (timm mobilenetv3_large_100) and its transforms.
+
+    - Architecture: timm mobilenetv3_large_100(num_classes=NUM_CLASSES)
+    - Weights: loaded from fine-tuned checkpoint
     """
-    model = timm.create_model("mobilenetv3_large_100", pretrained=True)
+    # Load checkpoint first (for id2name and consistency)
+    ckpt = torch.load(ckpt_path, map_location="cpu")
+    id2name = ckpt.get("id2name", {i + 1: str(i + 1) for i in range(cfg.NUM_CLASSES)})
+
+    # Build model skeleton with correct head size
+    model = timm.create_model(
+        "mobilenetv3_large_100",
+        pretrained=False,
+        num_classes=cfg.NUM_CLASSES,
+    )
+    model.load_state_dict(ckpt["model_state"])
     model.eval()
 
+    # Build transforms using timm's data config
     config = resolve_data_config({}, model=model)
-    transform = create_transform(**config)
+    transform = create_transform(**config, is_training=False)
 
-    # Get ImageNet class labels (cached locally after first download)
-    classes_file = "imagenet_classes.txt"
-    if not os.path.exists(classes_file):
-        url = "https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt"
-        print(f"Downloading ImageNet class names from {url} ...")
-        urllib.request.urlretrieve(url, classes_file)
-
-    with open(classes_file, "r") as f:
-        categories = [s.strip() for s in f.readlines()]
+    # categories[idx] will be the display label for class index idx
+    categories = [id2name[i] for i in sorted(id2name.keys())]
 
     return model, transform, categories
 
@@ -186,22 +212,25 @@ def main():
     num_samples = min(cfg.NUM_SAMPLES, len(valid_paths))
     sampled_paths = random.sample(valid_paths, k=num_samples)
 
-    print("=== Dynamic Approximate Classification (Batch Demo) ===")
+    print("=== Dynamic Approximate Classification (Batch Demo, Fine-Tuned) ===")
     print(f"Image directory        : {cfg.IMAGE_DIR}")
     print(f"Metadata path          : {cfg.METADATA_PATH}")
     print(f"Distance threshold     : {cfg.DISTANCE_THRESHOLD:.6f}")
     print(f"Number of images (pool): {len(valid_paths)}")
     print(f"Number of samples      : {num_samples}")
     print(f"Num threads (torch)    : {cfg.NUM_THREADS}")
+    print(f"Num classes            : {cfg.NUM_CLASSES}")
     print("--------------------------------------------------------")
 
-    # Load both models ONCE
-    print("Loading MobileNetV3-Small...")
+    # Load both fine-tuned models ONCE
+    print("Loading fine-tuned MobileNetV3-Small...")
     small_model, small_transform, small_categories = load_mobilenet_v3_small(
-        cfg.IMG_SIZE
+        cfg.IMG_SIZE, cfg.SMALL_CKPT_PATH
     )
-    print("Loading MobileNetV3-Large...")
-    large_model, large_transform, large_categories = load_mobilenet_v3_large()
+    print("Loading fine-tuned MobileNetV3-Large...")
+    large_model, large_transform, large_categories = load_mobilenet_v3_large(
+        cfg.LARGE_CKPT_PATH
+    )
     print("Models loaded. Starting per-image inference...\n")
 
     stats = {
@@ -245,7 +274,7 @@ def main():
         # Per-image output
         print(f"Image {idx}/{num_samples}: {img_name}")
         print(f"  Distance label     : {distance:.6f} (larger = closer)")
-        print(f"  Selected model     : MobileNetV3-{model_choice.upper()}")
+        print(f"  Selected model     : MobileNetV3-{model_choice.upper()} (fine-tuned)")
         print(f"  Inference latency  : {latency * 1000.0:.2f} ms")
         print(f"  Top-{cfg.TOPK} label distribution (label, confidence):")
         for rank, (label, prob) in enumerate(topk_results, start=1):
