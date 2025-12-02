@@ -2,18 +2,12 @@
 parameters.py
 
 Configuration for the Dynamic Approximate Classification (DAC) demo.
-
-All knobs live here so you don't have to touch DAC.py.
 """
 
-# Path to the directory containing your images.
-# These filenames must correspond to keys in METADATA_PATH.
-# Example: if metadata has "0001.png", "0002.png", then those files
-# should exist as IMAGE_DIR / "0001.png", etc.
+# -----------------------------
+# Data / metadata
+# -----------------------------
 IMAGE_DIR = "train"
-
-# Path to metadata JSON file with distance labels.
-# Format is assumed to be a dict mapping filename -> {..., "distance": float, ...}
 METADATA_PATH = "train/metadata.json"
 
 # Threshold on distance for model selection.
@@ -24,7 +18,6 @@ METADATA_PATH = "train/metadata.json"
 DISTANCE_THRESHOLD = 0.05
 
 # Number of images to randomly sample per run.
-# If this is larger than the number of available images, it will be clipped.
 NUM_SAMPLES = 20
 
 # Random seed for sampling images. Set to None for pure randomness.
@@ -32,6 +25,18 @@ RANDOM_SEED = 42
 
 # Torch threading configuration.
 NUM_THREADS = 8
+
+# -----------------------------
+# Model / classifier config
+# -----------------------------
+
+# Number of classes in your fine-tuned classifier.
+# For {car, truck, pedestrian, bicyclist, light} -> 5
+NUM_CLASSES = 5
+
+# Paths to fine-tuned checkpoints produced by finetune_mobilenet.py
+SMALL_CKPT_PATH = "ckpts_small/best_mobilenet_small_finetuned.pth"
+LARGE_CKPT_PATH = "ckpts_large/best_mobilenet_large_finetuned.pth"
 
 # Image size for MobileNetV3-Small (used in its torchvision transforms).
 IMG_SIZE = 224
