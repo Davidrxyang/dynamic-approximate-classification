@@ -52,13 +52,6 @@ python3 finetune_mobilenet.py \
   --output-dir ckpts_large \
   --device cpu
 
-to run inference:
-python3 infer_mobilenet.py \
-  --checkpoint ckpts_small/best_mobilenet_small_finetuned.pth \
-  --image train/1478019954186238236.jpg \
-  --device cpu
-
-
 ## setup
 
 make sure you are using a python venv
