@@ -38,6 +38,7 @@ from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
 
 import parameters as cfg  # all config flags live here
+from evaluation import compute_metrics, compute_per_class_metrics
 
 
 # -----------------------------
@@ -430,6 +431,14 @@ def main():
     large_labeled = 0
     large_correct = 0
 
+    # For precision/recall/F1
+    all_true_labels = []
+    all_pred_labels = []
+    small_true_labels = []
+    small_pred_labels = []
+    large_true_labels = []
+    large_pred_labels = []
+
     for idx, img_path in enumerate(sampled_paths, start=1):
         img_name = img_path.name
 
@@ -473,15 +482,21 @@ def main():
         if gt_label is not None:
             correct_flag = (pred_class_id == gt_label)
             total_labeled += 1
+            all_true_labels.append(gt_label)
+            all_pred_labels.append(pred_class_id)
             if correct_flag:
                 total_correct += 1
 
             if model_choice == "small":
                 small_labeled += 1
+                small_true_labels.append(gt_label)
+                small_pred_labels.append(pred_class_id)
                 if correct_flag:
                     small_correct += 1
             else:
                 large_labeled += 1
+                large_true_labels.append(gt_label)
+                large_pred_labels.append(pred_class_id)
                 if correct_flag:
                     large_correct += 1
 
@@ -545,6 +560,46 @@ def main():
             print("LARGE model accuracy              : (no labeled images routed to LARGE)")
     else:
         print("No ground-truth labels could be inferred; accuracy not computed.")
+
+    # Additional metrics
+    label_space = list(range(1, cfg.NUM_CLASSES + 1))
+
+    def _print_metrics(name: str, y_true, y_pred):
+        metrics = compute_metrics(y_true, y_pred, label_space)
+        print(f"\n{name} metrics (macro):")
+        print(f"  Accuracy : {metrics['accuracy'] * 100:.2f}%")
+        print(f"  Precision: {metrics['precision'] * 100:.2f}%")
+        print(f"  Recall   : {metrics['recall'] * 100:.2f}%")
+        print(f"  F1-score : {metrics['f1'] * 100:.2f}%")
+
+    if all_true_labels:
+        _print_metrics("Overall", all_true_labels, all_pred_labels)
+    else:
+        print("\nOverall metrics not computed (no labeled data).")
+
+    if all_true_labels:
+        per_class = compute_per_class_metrics(all_true_labels, all_pred_labels, label_space)
+        print("\nPer-class performance (overall predictions):")
+        for cls_id in sorted(per_class.keys()):
+            stats = per_class[cls_id]
+            print(
+                f"  class {cls_id}: "
+                f"prec={stats['precision'] * 100:.2f}% | "
+                f"recall={stats['recall'] * 100:.2f}% | "
+                f"f1={stats['f1'] * 100:.2f}% | "
+                f"support={int(stats['support'])} | "
+                f"predicted={int(stats['predicted'])}"
+            )
+
+    if small_true_labels:
+        _print_metrics("SMALL model", small_true_labels, small_pred_labels)
+    else:
+        print("\nSMALL model metrics not computed (no labeled data).")
+
+    if large_true_labels:
+        _print_metrics("LARGE model", large_true_labels, large_pred_labels)
+    else:
+        print("\nLARGE model metrics not computed (no labeled data).")
 
 
 if __name__ == "__main__":
