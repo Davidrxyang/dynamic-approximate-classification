@@ -72,35 +72,36 @@ def get_valid_image_paths(image_dir: str, metadata: dict) -> list[Path]:
     return valid_files
 
 
-def infer_image_label_from_metadata(single_meta: dict):
+def infer_image_label_from_metadata(image_meta):
     """
-    Given metadata for a single image (one entry from metadata.json), infer
-    an image-level class label from its bounding boxes.
+    Given a single image's metadata entry:
 
-    Strategy:
-      - Look at bounding_boxes[*].class_id
-      - Count frequency of each class_id
-      - Return the majority class_id
+        {
+            "bounding_boxes": [
+                {"xmin": ..., "xmax": ..., "ymin": ..., "ymax": ..., "class_id": ...},
+                ...
+            ],
+            "distance": ...
+        }
 
-    If no bounding_boxes or no class_id values are found, return None.
+    Return the class_id of the *largest* bounding box (by area).
     """
-    boxes = single_meta.get("bounding_boxes", [])
+
+    boxes = image_meta.get("bounding_boxes", [])
     if not boxes:
-        return None
+        return None  # or raise an error, depending on your pipeline
 
-    counts = {}
-    for box in boxes:
-        cid = box.get("class_id", None)
-        if cid is None:
-            continue
-        counts[cid] = counts.get(cid, 0) + 1
+    def box_area(box):
+        width = max(0, box["xmax"] - box["xmin"])
+        height = max(0, box["ymax"] - box["ymin"])
+        return width * height
 
-    if not counts:
-        return None
+    # Pick the bounding box with the largest area
+    largest_box = max(boxes, key=box_area)
 
-    # Majority vote
-    majority_label, _ = max(counts.items(), key=lambda kv: kv[1])
-    return majority_label
+    # Return its class_id (e.g., 1..5)
+    return largest_box["class_id"]
+
 
 
 def sample_image_paths_with_label_diversity(
